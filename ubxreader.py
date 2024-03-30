@@ -41,7 +41,7 @@ Modified:
 
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from queue import Empty, Queue
-from threading import Event, Thread
+from threading import Event, Thread, Lock
 from time import sleep
 
 import datetime as dt
@@ -51,6 +51,7 @@ import matplotlib.pyplot as plt
 from pynmeagps import NMEAMessageError, NMEAParseError
 from pyrtcm import RTCMMessage, RTCMMessageError, RTCMParseError
 from serial import Serial
+
 
 import csv
 
@@ -254,6 +255,18 @@ class GNSSSkeletonApp:
         self.stream = Serial(self.port, self.baudrate, timeout=self.timeout)
         self.stopevent.clear()
 
+        ##send a message on run
+
+        layers = 1
+        transaction = 0
+        cfgData = [('CFG_MSGOUT_UBX_RXM_RAWX_USB',1)] #Enables CFG-MSGOUT-UBX_RXM_RAWX_USB
+        msg2 = UBXMessage.config_set(layers,transaction,cfgData)
+        serial_lock = Lock()
+        #This prevents messages from overwriting eachother in the threading
+        serial_lock.acquire()
+        self.stream.write(msg2.serialize())
+        serial_lock.release()
+
         read_thread = Thread(
             target=self._read_loop,
             args=(
@@ -298,6 +311,7 @@ class GNSSSkeletonApp:
                     if parsed_data:
                         # extract current navigation solution
                         self._extract_coordinates(parsed_data)
+                        #print(parsed_data.identity)
 
                         # if it's an RXM-RTCM message, show which RTCM3 message
                         # it's acknowledging and whether it's been used or not.""
@@ -314,6 +328,7 @@ class GNSSSkeletonApp:
                         else:
                             if parsed_data.identity == 'RXM-RAWX':
                                 #createa a list of the pseudorange measurements up to 32
+                                #print(parsed_data.gnssId_01)
                                 try:
                                     psuedorangeBlock = [parsed_data.prMes_01, parsed_data.prMes_02, parsed_data.prMes_03, parsed_data.prMes_04, 
                                                     parsed_data.prMes_05, parsed_data.prMes_06, parsed_data.prMes_07, parsed_data.prMes_08, 
@@ -397,15 +412,15 @@ class GNSSSkeletonApp:
 
 
                                     tec = calc_tec(f1,f2,psuedorangeBlock[i], psuedorangeBlock[j])
-                                    print("TEC", tec/10e16, "TECU")
-                                    print("VTEC", verticalIntegration(tec, elvIdBlock[i])/10e16, "TECU")
+                                    print("TEC", tec/10e14, "TECU")
+                                    print("VTEC", verticalIntegration(tec, elvIdBlock[i])/10e14, "TECU")
                                     print("SV", svIdBlock[i], "GNSS", identifyNetwork(gnssIdBlock[i]), "FREQ", f1, "Hz") 
                                     print("SV", svIdBlock[j], "GNSS", identifyNetwork(gnssIdBlock[j]), "FREQ", f2, "Hz")
-                                    with open('out.txt', 'rw') as file:
-                                        file.write("VTEC: " + str(verticalIntegration(tec, elvIdBlock[i])/10e14) + "TECU\n")
-                                        file.write("SV", svIdBlock[i], "GNSS", identifyNetwork(gnssIdBlock[i]), "FREQ", f1, "Hz")
-                                        file.write("SV", svIdBlock[j], "GNSS", identifyNetwork(gnssIdBlock[j]), "FREQ", f2, "Hz")
-                                    file.close()
+                                    #with open('out.txt', 'rw') as file:
+                                    #    file.write("VTEC: " + str(verticalIntegration(tec, elvIdBlock[i])/10e14) + "TECU\n")
+                                    #    file.write("SV", svIdBlock[i], "GNSS", identifyNetwork(gnssIdBlock[i]), "FREQ", f1, "Hz")
+                                    #    file.write("SV", svIdBlock[j], "GNSS", identifyNetwork(gnssIdBlock[j]), "FREQ", f2, "Hz")
+                                    #file.close()
                                     data.append(tec)
                                     times.append(dt.datetime.utcnow())
                                     psuedos.append([psuedorangeBlock[i], psuedorangeBlock[j]])
@@ -526,12 +541,13 @@ class GNSSSkeletonApp:
 if __name__ == "__main__":
     # send a payload to the reciever
     # B5 62 06 8A 09 00 01 01 00 00 A7 02 91 20 01 F6 79
-    msg2 = UBXReader.parse(b"\xb5\x62\x06\x8a\x09\x00\x01\x01\x00\x00\xa7\x02\x91\x20\x01\xf6\x79", msgmode=SET)
+    msg1 = UBXMessage(b'\x06', b'\x01', payload=b"\xb5\x62\x06\x8a\x09\x00\x01\x01\x00\x00\xa7\x02\x91\x20\x01\xf6\x79", msgmode=SET)
+
     arp = ArgumentParser(
         formatter_class=ArgumentDefaultsHelpFormatter,
     )
     arp.add_argument(
-        "-P", "--port", required=False, help="Serial port", default="COM8"
+        "-P", "--port", required=False, help="Serial port", default="/dev/ttyACM0"
     )
     arp.add_argument(
         "-B", "--baudrate", required=False, help="Baud rate", default=38400, type=int
