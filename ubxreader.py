@@ -630,7 +630,7 @@ if __name__ == "__main__":
             writer.writerow(["Time", "TEC (TECU)", "SV", "psuedo-1", "pseudo-2", "gnssid-1", "gnssid-2", "VTEC (TECU)"])
             for i in range(len(data)):
                 try:
-                    writer.writerow([times[i],data[i]/10e16, svids[i], psuedos[i][0], psuedos[i][1], gnssids[i][0], gnssids[i][1], VTECs[i]/10e16])
+                    writer.writerow([times[i],data[i]/10e14, svids[i], psuedos[i][0], psuedos[i][1], gnssids[i][0], gnssids[i][1], VTECs[i]/10e14])
                 except IndexError:
                     continue
         print("Data saved to data.csv")
